@@ -23,7 +23,8 @@
 import processing.serial.*;
 
 boolean simulation = true;
- 
+boolean jitter = false;
+
 Serial port;  // Create object from Serial class
 
 int graWidth;
@@ -41,6 +42,8 @@ int timeDivision;      // time division on x-axis, defined in nb of samples
 int smallVoltDivision;
 int voltDivision;      // volt division on y-axis, defined in volt scaled to byte (0-255)
 
+float voltageOffset = 2.5;
+int waitduration;
 int threshold;
 int prescaler;
  
@@ -55,7 +58,7 @@ void setup()
   int graTopSpacing = 16;
   int graBottomSpacing = 64;
   int graLeftSpacing = 16;
-  int graRightSpacing = graLeftSpacing;
+  int graRightSpacing = 240;
   
   graWidth = n;
   graHeight = 480;
@@ -74,6 +77,7 @@ void setup()
   smallVoltDivision = 16;
   voltDivision = 5*smallVoltDivision;
 
+  waitduration = n - 80;
   threshold = 10;
   prescaler = 128;
 }
@@ -85,10 +89,20 @@ int getY(int val) {
 void getBuffer() {
   if (simulation)
   {
-    float f = random(10.0*16.0-0.8, 10.0*16.0+0.5);
-    float a = random(2.22, 2.27);
+    float f;
+    float a;
+    f = 1/0.133*2;
+    a = 2.25;
+    if (jitter)
+    {
+      f = random(f*0.95, f*1.05);
+      a = random(a-0.03, a+0.03);
+    }
     for (int i=0; i<n; i++)
-      pushValue(int( ((a*sin(TWO_PI*i/f))+2.50)/5.0*256.0 ));
+    {
+      float x = (i-(n - waitduration)) * getSecondPerDivision(prescaler) / timeDivision;
+      pushValue(int( ((a*sin(TWO_PI*x/(1/f)))+2.50)/5.0*256.0 ));
+    }
   }
   else
   {
@@ -139,11 +153,16 @@ void drawGrid() {
   // X-Axis
   dottedLine(graOriginX, graOriginY+graHeight/2, graOriginX+graWidth-1, graOriginY+graHeight/2, dotStyle*zoom);
 
-  // Y-Axis - todo place origin?
-  dottedLine(graOriginX+graWidth/2, graOriginY, graOriginX+graWidth/2, graOriginY+graHeight-1, dotStyle);
+  // Y-Axis
+  int offset = n - waitduration;
+  dottedLine(graOriginX+offset, graOriginY, graOriginX+offset, graOriginY+graHeight-1, dotStyle);
   
   // Small crossbars on x-axis
-  for (int x=graOriginX; x<graOriginX+n; x+=smallTimeDivision*zoom)
+  for (int x=graOriginX+offset; x>graOriginX; x-=smallTimeDivision*zoom)
+  {
+    line(x, graOriginY+graHeight/2-2, x, graOriginY+graHeight/2+2);
+  }
+  for (int x=graOriginX+offset; x<graOriginX+graWidth-1; x+=smallTimeDivision*zoom)
   {
     line(x, graOriginY+graHeight/2-2, x, graOriginY+graHeight/2+2);
   }
@@ -151,11 +170,15 @@ void drawGrid() {
   // Small crossbars on y-axis
   for (int y=graOriginY; y<graOriginY+graHeight-1; y+=smallVoltDivision)
   {
-    line(graOriginX+graWidth/2-2, y, graOriginX+graWidth/2+2, y);
+    line(graOriginX+offset-2, y, graOriginX+offset+2, y);
   }
 
   // Division bars crossing x-axis i.e. |||
-  for (int x=graOriginX; x<graOriginX+graWidth-1; x+=timeDivision*zoom)
+  for (int x=graOriginX+offset; x>graOriginX; x-=timeDivision*zoom)
+  {
+    dottedLine(x, graOriginY, x, graOriginY+graHeight-1, 16);
+  }
+  for (int x=graOriginX+offset; x<graOriginX+graWidth-1; x+=timeDivision*zoom)
   {
     dottedLine(x, graOriginY, x, graOriginY+graHeight-1, 16);
   }
@@ -163,7 +186,8 @@ void drawGrid() {
   // Division bars crossing y-axis i.e. = =
   for (int y=graOriginY; y<graOriginY+graHeight-1; y+=voltDivision)
   {
-    dottedLine(graOriginX, y, graOriginX+graWidth-1, y, smallTimeDivision*zoom);
+    dottedLine(graOriginX+offset, y, graOriginX, y, smallTimeDivision*zoom);
+    dottedLine(graOriginX+offset, y, graOriginX+graWidth-1, y, smallTimeDivision*zoom);
   }
   
   // Frame
@@ -172,18 +196,141 @@ void drawGrid() {
   rect(graOriginX-1, graOriginY-1, graWidth+1, graHeight+1); 
 }
 
-void dottedLine(float x1, float y1, float x2, float y2, float spacing){
- float steps = dist(x1, y1, x2, y2) / spacing;
- for (int i = 0; i <= steps; i++) {
-  float x = lerp(x1, x2, i/steps);
-  float y = lerp(y1, y2, i/steps);
-  point(x, y);
- }
+void drawTexts()
+{
+  // The font must be located in the sketch's 
+  // "data" directory to load successfully
+  PFont font;
+  font = loadFont("Monospaced.bold-16.vlw");
+  textFont(font, 16);
+
+  fill(97, 195, 97, 255.0); // green
+  float sps = getSecondPerSample(prescaler);
+
+  // full left x value (x0)
+  textAlign(LEFT);
+  float x0 = (n - waitduration) * sps * 1000.0;
+  String unit = "ms";
+  if (x0 < 0.001)
+  {
+    x0 *= 1000.0;
+    unit = "us";
+  }
+  String x0Text = String.format("%.3f %s", x0, unit);
+  text(x0Text, graOriginX+4, graOriginY+graHeight+16);  
+
+  // full right x value
+  textAlign(RIGHT);
+  float endset = waitduration * sps * 1000.0;
+  unit = "ms";
+  if (endset < 0.001)
+  {
+    endset *= 1000.0;
+    unit = "us";
+  }
+  String endsetText = String.format("%.3f %s", endset, unit);
+  text(endsetText, graOriginX+graWidth-1, graOriginY+graHeight+16);  
+    
+  // time per division label
+  textAlign(CENTER);
+  float spd = getSecondPerDivision(prescaler);
+  spd *= 1000.0;
+  unit = "ms";
+  if (spd < 0.001)
+  {
+    spd *= 1000.0;
+    unit = "us";
+  }
+  String spdText = String.format("%.3f %s/div", spd, unit);
+  text(spdText, graOriginX+graWidth/2, graOriginY+graHeight+32);  
+
+  // volt per division label
+  textAlign(RIGHT);
+  float vpd = 5.0 / (graHeight / voltDivision);
+  unit = "V";
+  if (vpd < 0.001)
+  {
+    vpd *= 1000.0;
+    unit = "mV";
+  }
+  String vpdText = String.format("%.3f %s/div", vpd, unit);
+  text(vpdText, width-16, graOriginY+8);  
+
+  // selected prescaler  
+  String prescalerText = String.format("prescaler: %d", prescaler);
+  text(prescalerText, width-16, graOriginY+8+32);  
+
+  // selected threshold
+  String thresholdText = String.format("threshold: %.1fV", threshold/256.0*5.0);
+  text(thresholdText, width-16, graOriginY+8+48);  
+
+  // selected offset
+  float offset = (n - waitduration) * sps * 1000.0;
+  unit = "ms";
+  if (offset < 0.001)
+  {
+    offset *= 1000.0;
+    unit = "us";
+  }
+  String offsetText = String.format("offset: %.3f %s", offset, unit);
+  text(offsetText, width-16, graOriginY+8+64);  
+  
 }
 
-float getUsPerDivision(int prescaler)
+void drawMarker()
 {
-  return 0.0;
+  int i = mouseX - graOriginX;
+  if (i<0) i = 0;
+  if (i>=n) i = n-1;
+
+  // marker box
+  stroke(255, 0, 0, 192.0);
+  fill(97, 195, 97, 192.0); // green
+  int x = i;
+  int y = getY(samples[i]);
+  ellipse(x+graOriginX, y+graOriginY, 8, 8);
+
+  strokeWeight(2);
+  stroke(255, 0, 0, 192.0);
+  dottedLine(x+graOriginX, graOriginY, x+graOriginX, graOriginY+graHeight-1, 3);
+
+  // marker text
+  fill(97, 195, 97, 255.0); // green
+  float amplitude = (samples[i]/256.0 * 5.0) - voltageOffset;
+  String markerText = String.format("marker: %.3fV", amplitude);
+  text(markerText, width-16, graOriginY+8+80);  
+}
+
+
+void dottedLine(float x1, float y1, float x2, float y2, float spacing)
+{
+  float steps = dist(x1, y1, x2, y2) / spacing;
+  for (int i = 0; i <= steps; i++) 
+  {
+    float x = lerp(x1, x2, i/steps);
+    float y = lerp(y1, y2, i/steps);
+    point(x, y);
+  }
+}
+
+float getSecondPerDivision(int prescaler)
+{
+  return getSecondPerSample(prescaler) * timeDivision;
+}
+
+float getSecondPerSample(int prescaler)
+{
+  // return the time duration of a sample according to calibration
+  switch(prescaler)
+  {
+    case 32: // 50822 S/s with prescaler 32
+      return 1.0/50822.0; // TBD
+    case 64: // 14532 S/s with prescaler 64
+      return 1.0/14532.0; // TBD
+    case 128: // 9611 S/s with prescaler 128
+    default :
+      return 1.0/9611.0;
+  } 
 }
 
 void keyReleased() {
@@ -201,12 +348,15 @@ void keyReleased() {
       port.write("p16");
       break;
     case '5':
+      prescaler = 32;
       port.write("p32");
       break;
     case '6':
+      prescaler = 64;
       port.write("p64");
       break;
     case '7':
+      prescaler = 128;
       port.write("p128");
       break;
     case 't':
@@ -243,8 +393,10 @@ void draw()
 {
   background(0);
   drawGrid();
+  drawTexts();
   getBuffer();
   drawSignal();
+  drawMarker();
 }
 
 
