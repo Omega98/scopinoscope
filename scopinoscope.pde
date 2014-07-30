@@ -43,9 +43,12 @@ int smallVoltDivision;
 int voltDivision;      // volt division on y-axis, defined in volt scaled to byte (0-255)
 
 float voltageOffset = 2.5;
+boolean sampling;
 int waitduration;
 int threshold;
 int prescaler;
+ 
+PFont font;
  
 void setup() 
 {
@@ -77,9 +80,15 @@ void setup()
   smallVoltDivision = 16;
   voltDivision = 5*smallVoltDivision;
 
+  sampling = false;
   waitduration = n - 80;
   threshold = 10;
   prescaler = 128;
+
+  // The font must be located in the sketch's 
+  // "data" directory to load successfully
+  font = loadFont("Monospaced.bold-16.vlw");
+  textFont(font, 16);
 }
  
 int getY(int val) {
@@ -198,12 +207,6 @@ void drawGrid() {
 
 void drawTexts()
 {
-  // The font must be located in the sketch's 
-  // "data" directory to load successfully
-  PFont font;
-  font = loadFont("Monospaced.bold-16.vlw");
-  textFont(font, 16);
-
   fill(97, 195, 97, 255.0); // green
   float sps = getSecondPerSample(prescaler);
 
@@ -216,7 +219,7 @@ void drawTexts()
     x0 *= 1000.0;
     unit = "us";
   }
-  String x0Text = String.format("%.3f %s", x0, unit);
+  String x0Text = String.format("%.3f %s", -x0, unit);
   text(x0Text, graOriginX+4, graOriginY+graHeight+16);  
 
   // full right x value
@@ -272,9 +275,12 @@ void drawTexts()
     offset *= 1000.0;
     unit = "us";
   }
-  String offsetText = String.format("offset: %.3f %s", offset, unit);
+  String offsetText = String.format("time offset: %.3f %s", offset, unit);
   text(offsetText, width-16, graOriginY+8+64);  
   
+  // acquisition
+  String acquisitionText = String.format("sampling: %s", sampling ? "ON" : "OFF");
+  text(acquisitionText, width-16, graOriginY+graHeight-1);  
 }
 
 void drawMarker()
@@ -295,12 +301,40 @@ void drawMarker()
   dottedLine(x+graOriginX, graOriginY, x+graOriginX, graOriginY+graHeight-1, 3);
 
   // marker text
+  textAlign(RIGHT);
   fill(97, 195, 97, 255.0); // green
   float amplitude = (samples[i]/256.0 * 5.0) - voltageOffset;
   String markerText = String.format("marker: %.3fV", amplitude);
   text(markerText, width-16, graOriginY+8+80);  
 }
 
+void drawButtons()
+{
+  strokeWeight(2);
+  stroke(97, 195, 97, 255.0);
+  noFill();
+  
+  rect(graOriginX+graWidth-1+32, graOriginY+8+80+16, 64, 64);
+  rect(graOriginX+graWidth-1+32+2, graOriginY+8+80+16+2, 64-4, 64-4);
+  textAlign(CENTER);
+  text("START", graOriginX+graWidth-1+32+32, graOriginY+8+80+16+64-32+8);  
+
+  rect(graOriginX+graWidth-1+32+64+8, graOriginY+8+80+16, 64, 64);
+  rect(graOriginX+graWidth-1+32+64+8+2, graOriginY+8+80+16+2, 64-4, 64-4);
+  text("STOP", graOriginX+graWidth-1+32+64+8+32, graOriginY+8+80+16+64-32+8);  
+}
+
+void mousePressed()
+{
+  if ((mouseX > graOriginX+graWidth-1+32) &&
+      (mouseX < graOriginX+graWidth-1+32+64) &&
+      (mouseY > graOriginY+8+80+16) &&
+      (mouseY < graOriginY+8+80+16+64))
+     {
+      sampling = true;
+      if (simulation) jitter = true;
+     }
+}
 
 void dottedLine(float x1, float y1, float x2, float y2, float spacing)
 {
@@ -370,10 +404,14 @@ void keyReleased() {
       port.write("t" + Integer.toString(threshold));
       break;
     case 's':
+      sampling = true;
       port.write(key);
+      if (simulation) jitter = true;
       break;
     case 'x':
+      sampling = false;
       port.write(key);
+      if (simulation) jitter = false;
       break;
     case '+':
       zoom *= 2.0f;
@@ -394,6 +432,7 @@ void draw()
   background(0);
   drawGrid();
   drawTexts();
+  drawButtons();
   getBuffer();
   drawSignal();
   drawMarker();
