@@ -22,7 +22,7 @@
  */ 
 import processing.serial.*;
 
-boolean simulation = false;
+boolean simulation = true;
 boolean jitter = false;
 
 Serial port;  // Create object from Serial class
@@ -49,6 +49,9 @@ int threshold;
 int prescaler;
  
 PFont font;
+
+Button startButton;
+Button stopButton;
  
 void setup() 
 {
@@ -94,6 +97,9 @@ void setup()
   // "data" directory to load successfully
   font = loadFont("Monospaced.bold-16.vlw");
   textFont(font, 16);
+  
+  startButton = new Button("START", graOriginX+graWidth-1+32, graOriginY+8+96+16, 64, 64, CENTER);
+  stopButton = new Button("STOP", graOriginX+graWidth-1+32+64+8, graOriginY+8+96+16, 64, 64, CENTER);
 }
  
 int getY(int val) {
@@ -120,11 +126,17 @@ void getBuffer() {
   }
   else
   {
+    int bytesRead = 0;
     while (port.available() >= n) {
       if (port.read() == 0xff) {
         /* value = (port.read() << 8) | (port.read()); */
         for (int i=0; i<n; i++)
+        {
           pushValue(port.read());
+          bytesRead++;
+        }
+        if (bytesRead == n)
+          break;
       }
     }
   }
@@ -330,25 +342,21 @@ void drawButtons()
   stroke(97, 195, 97, 255.0);
   noFill();
   
-  rect(graOriginX+graWidth-1+32, graOriginY+8+96+16, 64, 64);
-  rect(graOriginX+graWidth-1+32+2, graOriginY+8+96+16+2, 64-4, 64-4);
-  textAlign(CENTER);
-  text("START", graOriginX+graWidth-1+32+32, graOriginY+8+96+16+64-32+8);  
-
-  rect(graOriginX+graWidth-1+32+64+8, graOriginY+8+96+16, 64, 64);
-  rect(graOriginX+graWidth-1+32+64+8+2, graOriginY+8+96+16+2, 64-4, 64-4);
-  text("STOP", graOriginX+graWidth-1+32+64+8+32, graOriginY+8+96+16+64-32+8);  
+  startButton.draw();
+  stopButton.draw();
 }
 
 void mousePressed()
 {
-  if ((mouseX > graOriginX+graWidth-1+32) &&
-      (mouseX < graOriginX+graWidth-1+32+64) &&
-      (mouseY > graOriginY+8+96+16) &&
-      (mouseY < graOriginY+8+96+16+64))
+  if (startButton.isPressed(mouseX, mouseY))
      {
       sampling = true;
       if (simulation) jitter = true;
+     }
+  if (stopButton.isPressed(mouseX, mouseY))
+     {
+      sampling = false;
+      if (simulation) jitter = false;
      }
 }
 
