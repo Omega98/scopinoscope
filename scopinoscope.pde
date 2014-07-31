@@ -22,7 +22,7 @@
  */ 
 import processing.serial.*;
 
-boolean simulation = true;
+boolean simulation = false;
 boolean jitter = false;
 
 Serial port;  // Create object from Serial class
@@ -54,6 +54,7 @@ void setup()
 {
   // Open the port that the board is connected to and use the same speed (9600 bps)
   port = new Serial(this, Serial.list()[0], 115200);
+  port.write("x");
 
   n = 1280;
   samples = new int[n];
@@ -81,10 +82,14 @@ void setup()
   voltDivision = 5*smallVoltDivision;
 
   sampling = false;
-  waitduration = n - 80;
+  waitduration = n - 640;
   threshold = 10;
   prescaler = 128;
 
+  port.write("p" + Integer.toString(prescaler));
+  port.write("w" + Integer.toString(n - waitduration));
+  port.write("t" + Integer.toString(threshold));
+  
   // The font must be located in the sketch's 
   // "data" directory to load successfully
   font = loadFont("Monospaced.bold-16.vlw");
@@ -296,16 +301,27 @@ void drawMarker()
   int y = getY(samples[i]);
   ellipse(x+graOriginX, y+graOriginY, 8, 8);
 
+  // marker line
   strokeWeight(2);
   stroke(255, 0, 0, 192.0);
-  dottedLine(x+graOriginX, graOriginY, x+graOriginX, graOriginY+graHeight-1, 3);
+  dottedLine(x+graOriginX, graOriginY, x+graOriginX, graOriginY+graHeight-1, 4);
 
   // marker text
   textAlign(RIGHT);
   fill(97, 195, 97, 255.0); // green
   float amplitude = (samples[i]/256.0 * 5.0) - voltageOffset;
-  String markerText = String.format("marker: %.3fV", amplitude);
-  text(markerText, width-16, graOriginY+8+80);  
+  String markerAmpText = String.format("marker: %.3fV", amplitude);
+  text(markerAmpText, width-16, graOriginY+8+80);  
+
+  float time = getSecondPerSample(prescaler) * (i - (n - waitduration)) * 1000.0;
+  String unit = "ms";
+  if (time < 0.001)
+  {
+    time *= 1000.0;
+    unit = "us";
+  }
+  String markerTimeText = String.format("marker: %.3f %s", time, unit);
+  text(markerTimeText, width-16, graOriginY+8+96);
 }
 
 void drawButtons()
@@ -314,22 +330,22 @@ void drawButtons()
   stroke(97, 195, 97, 255.0);
   noFill();
   
-  rect(graOriginX+graWidth-1+32, graOriginY+8+80+16, 64, 64);
-  rect(graOriginX+graWidth-1+32+2, graOriginY+8+80+16+2, 64-4, 64-4);
+  rect(graOriginX+graWidth-1+32, graOriginY+8+96+16, 64, 64);
+  rect(graOriginX+graWidth-1+32+2, graOriginY+8+96+16+2, 64-4, 64-4);
   textAlign(CENTER);
-  text("START", graOriginX+graWidth-1+32+32, graOriginY+8+80+16+64-32+8);  
+  text("START", graOriginX+graWidth-1+32+32, graOriginY+8+96+16+64-32+8);  
 
-  rect(graOriginX+graWidth-1+32+64+8, graOriginY+8+80+16, 64, 64);
-  rect(graOriginX+graWidth-1+32+64+8+2, graOriginY+8+80+16+2, 64-4, 64-4);
-  text("STOP", graOriginX+graWidth-1+32+64+8+32, graOriginY+8+80+16+64-32+8);  
+  rect(graOriginX+graWidth-1+32+64+8, graOriginY+8+96+16, 64, 64);
+  rect(graOriginX+graWidth-1+32+64+8+2, graOriginY+8+96+16+2, 64-4, 64-4);
+  text("STOP", graOriginX+graWidth-1+32+64+8+32, graOriginY+8+96+16+64-32+8);  
 }
 
 void mousePressed()
 {
   if ((mouseX > graOriginX+graWidth-1+32) &&
       (mouseX < graOriginX+graWidth-1+32+64) &&
-      (mouseY > graOriginY+8+80+16) &&
-      (mouseY < graOriginY+8+80+16+64))
+      (mouseY > graOriginY+8+96+16) &&
+      (mouseY < graOriginY+8+96+16+64))
      {
       sampling = true;
       if (simulation) jitter = true;
@@ -393,22 +409,32 @@ void keyReleased() {
       prescaler = 128;
       port.write("p128");
       break;
-    case 't':
-      threshold++;
+    case 't': // increase threshold by 0.1V
+      threshold += 0.1/5.0 * 256.0;
       if (threshold >= 256) threshold=255;
       port.write("t" + Integer.toString(threshold));
       break;
-    case 'g':
-      threshold--;
-      if (threshold < 0) threshold=1;
+    case 'g': // decrease threshold by 0.1V
+      threshold -= 0.1/5.0 * 256.0;
+      if (threshold <= 0) threshold=1;
       port.write("t" + Integer.toString(threshold));
       break;
-    case 's':
+    case 'y': // increase by 16 samples the pre-trigger duration
+      waitduration += 16;
+      if (waitduration > n) waitduration=n;
+      port.write("w" + Integer.toString(n - waitduration));
+      break;
+    case 'h': // decrease by 16 samples the pre-trigger duration
+      waitduration -= 16;
+      if (n - waitduration > 992) waitduration= n - 992;
+      port.write("w" + Integer.toString(n - waitduration));
+      break;
+    case 's': // start the sampling process
       sampling = true;
       port.write(key);
       if (simulation) jitter = true;
       break;
-    case 'x':
+    case 'x': // stop the sampling process
       sampling = false;
       port.write(key);
       if (simulation) jitter = false;
@@ -430,10 +456,10 @@ void keyReleased() {
 void draw()
 {
   background(0);
+  getBuffer();
   drawGrid();
   drawTexts();
   drawButtons();
-  getBuffer();
   drawSignal();
   drawMarker();
 }
